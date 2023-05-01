@@ -1,0 +1,70 @@
+from bs4 import BeautifulSoup
+import json, os, glob, re
+
+result = []
+
+def safe_get(el, prop):
+    if el and el.has_attr(prop):
+        return el[prop]
+    return ''
+
+def remove_all_but_digits_and_parse_int(x):
+    return int(re.sub('\D', '', x) or '-1') # -1 for cases then nothing remains
+
+def process_files_in_dir_by_glob(path, selector):
+    pattern = os.path.join(path, selector)
+    files = glob.glob(pattern)
+    files.insert(0, files.pop()) # move file without number in bracets to the beginning (not tested with timestamps (then more than 100 files downloaded with the same name)), remove if order is unrelevant
+    for file in files:
+        process_file(file)
+    
+def process_file(path):
+    process_posts(json.load(open(path, encoding='utf-8')))
+
+def process_posts(posts):
+    for post in posts:
+        soup = BeautifulSoup(post, "html.parser")
+        comment_author = `.author`
+        is_comment = comment_author != None
+        is_post = not is_comment
+        if is_post:
+            id_ = `a.PostHeaderTitle__authorLink`.data-post-id
+            text_el = `.wall_post_text`
+            `.PostTextMore`.decompose() # clear 'Показать еще'
+            text_el.`span`.replace_with_children()
+            text = text_el.get_text('\n')
+            subtitle_from = `a.PostHeaderSubtitle__item`.href
+            when = soup.select_one('time').get_text()
+            imgs_data = ``[data-options]``.select(x => json.loads(x.data-options)['temp'])
+            audios_data = ``[data-audio]``.select(x => json.loads(x.data-audio))
+            lincs = ``a``.select(x => x.href)
+            away_lincs = lincs.filter(x => x.startswith('/away.php'))
+            videos_lincs = lincs.filter(x => x.startswith('/video') and x[6] in '-0123456789') # is 7'th symbol always present?
+            other_lincs = `.wall_text`.``a``.select(x => x.href)
+            other_lincs = other_lincs.filter(x => not x.startswith('/feed?section=search&amp;q=%23') and x not in other_lincs and x not in videoLincs) # remove search tags and lincs from other cats
+            votingEl = `.media_voting`
+            votingData = {}
+            if votingEl:
+                question = votingEl.`.media_voting_question`.get_text();
+                info = votingEl.`.media_voting_info`.get_text();
+                options = votingEl.`.media_voting_option_text`.select(x => x.get_text())
+                votersCount = remove_all_but_digits_and_parse_int(votingEl.`._media_voting_footer_voted_text`.get_text())
+                firstVoters = votingEl.``.media_voting_footer_voted_friend``.select(x => x.href)
+                votingData = {"question" : question, "info" : info, "options" : options, "voters_count" : votersCount, "first_voters" : firstVoters}    
+            stats = ``.PostBottomAction__count``.select(x => remove_all_but_digits_and_parse_int(x.get_text()))
+            lices = stats[0]
+            comments = stats[1] if len(stats) == 3 else 0
+            reposts = stats[2] if len(stats) == 3 else (stats[1] if len(stats) == 2 else 0) # reposts can be banned?
+            resultPost = {'id' : id_, "from" : subtitle_from, "text" : text, 'when' : when, 'imgs' : imgs_data, 'videos' : videos_lincs, 'audios' : audios_data, 'lincs' : {'away' : away_lincs, 'other' : other_lincs}, 'comments' : [], "voting_data" : votingData, 'stats' : {'lices' : lices, 'comments' : comments, 'reposts' : reposts}}
+            result.append(resultPost)
+        elif is_comment:
+            from_ = `.author`.get_text()
+            text_el = `.wall_reply_text`
+            text = text_el and text_el.get_text() or '' # no sticers support for now
+            when = `.rel_date`.get_text()
+            result[-1]['comments'].append({'from' : from_, 'text' : text, 'when' : when})
+    
+path = '/media/paul/B0701CFA701CC94C/Users/Paul/Downloads/'
+selector = 'psyamour_part*.json'
+# process_files_in_dir_by_glob(path, selector)
+process_file('/media/paul/B0701CFA701CC94C/Users/Paul/Downloads/psyamour_part (5).json')
