@@ -9,7 +9,7 @@ def safe_get(el, prop):
     return ''
 
 def remove_all_but_digits_and_parse_int(x):
-    return int(re.sub('\D', '', x) or '-1') # -1 for cases then nothing remains
+    return int(re.sub('\D', '', x) or '0') # 0 for cases then nothing remains
 
 def process_files_in_dir_by_glob(path, mor):
     pattern = os.path.join(path, mor)
@@ -95,13 +95,16 @@ def process_posts(posts):
                 votersCount = remove_all_but_digits_and_parse_int(votingEl.s("._media_voting_footer_voted_text").get_text());
                 firstVoters = [x.g('href') for x in votingEl.m(".media_voting_footer_voted_friend")]
                 votingData = {"question" : question, "info" : info, "options" : options, "voters_count" : votersCount, "first_voters" : firstVoters}    
-            stats = [remove_all_but_digits_and_parse_int(x.get_text()) for x in sw.m('.PostBottomAction__count')]
-            if stats != []:
-                lices = stats[0]
-                comments = stats[1] if len(stats) == 3 else 0 # may miss comments and reposts? TODO
-                reposts = stats[2] if len(stats) == 3 else (stats[1] if len(stats) == 2 else 0) # reposts can be banned?
-            else:
-                lices = comments = reposts = -1
+            lices = remove_all_but_digits_and_parse_int(sw.s('.PostBottomAction').get_text())
+            comments = remove_all_but_digits_and_parse_int(sw.s('[data-like-button-type="comment"]').get_text())
+            reposts = remove_all_but_digits_and_parse_int(sw.s('[data-like-button-type="share"]').get_text())
+            #stats = [remove_all_but_digits_and_parse_int(x.get_text()) for x in sw.m('.PostBottomAction__count')]
+            #if stats != []:
+            #    lices = stats[0]
+            #    comments = stats[1] if len(stats) == 3 else 0 # may miss comments and reposts? TODO
+            #    reposts = stats[2] if len(stats) == 3 else (stats[1] if len(stats) == 2 else 0) # reposts can be banned?
+            #else:
+            #    lices = comments = reposts = -1
             resultPost = {'id' : id_, "from" : subtitle_from, "text" : text, 'when' : when, 'imgs' : imgs_data, 'videos' : videos_lincs, 'audios' : audios_data, 'lincs' : {'away' : away_lincs, 'other' : other_lincs}, 'first_comments' : [], "voting_data" : votingData, 'stats' : {'lices' : lices, 'comments' : comments, 'reposts' : reposts}}
             result.append(resultPost)
         elif is_comment:
@@ -133,7 +136,8 @@ def toDb(data, path):
         srcId = int(id_[0])
         postId = int(id_[1])
         s = p['stats']
-        ret= [srcId, postId, p['when'], p['from'], p['text'], json.dumps(p['voting_data'],ensure_ascii=False), s['lices'], s['comments'], s['reposts']]
+        ret= [srcId, postId, p['when'], p['from'], p['text'], json.dumps(p['voting_data'],ensure_ascii=False) if p['voting_data'] else '', s['lices'], s['comments'], s['reposts']]
+        # empty voting_data is '', better leave {} ?
         return ret
     c.executemany("INSERT INTO posts (srcId, postId, when_, from_, text, votingData, lices, comments, reposts) VALUES (?,?,?,?,?,?,?,?,?)", [f(p) for p in data]) # order guaranteed?
     for i, p in enumerate(data):
@@ -144,5 +148,5 @@ def toDb(data, path):
         c.executemany("INSERT INTO comments VALUES (?, ?, ?, ?, ?)", [[firstId + i, c['from'], c['from_id'], c['text'], c['when']] for c in p['first_comments']])
     db.commit()
         
-process_files_in_dir_by_glob(path, 'netstalcing*.json')
-toDb(result, '/home/paul/Загрузки/netstalcing.db')
+process_files_in_dir_by_glob('/home/paul/Загрузки/', 'netstalcing*.json')
+toDb(result, '/home/paul/Загрузки/netstalcing2.db')
