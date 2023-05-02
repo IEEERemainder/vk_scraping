@@ -17,6 +17,7 @@ def process_files_in_dir_by_glob(path, mor):
     files.insert(0, files.pop()) # move file without number in bracets to the beginning (not tested with timestamps (then more than 100 files downloaded with the same name)), remove if order is unrelevant
     for file in files:
         process_file(file)
+        print("processed",file)
     
 def process_file(path):
     process_posts(json.load(open(path, encoding='utf-8')))
@@ -33,11 +34,11 @@ class SoupWrapper:
             return self.soup[att]
         return ''
     def get_text(self, sep = ''):
-    	return self.soup and self.soup.get_text(sep) or ''
+        return self.soup and self.soup.get_text(sep) or ''
     def decompose(self):
-    	self.soup and self.soup.decompose()
+        self.soup and self.soup.decompose()
     def replace_with_children(self):
-    	self.soup and self.soup.replace_with_children()
+        self.soup and self.soup.replace_with_children()
 
 def process_image_data(d):
     for c in ['z', 'y', 'x']: # return best quality
@@ -61,11 +62,15 @@ def process_posts(posts):
         soup = BeautifulSoup(post, "html.parser")
         sw = SoupWrapper(soup)
         comment_author = sw.s('.author')
-        is_comment = comment_author.soup != None
+        replywrap = sw.s('.reply_wrap')
+        is_comment = replywrap.soup != None # remove deleted comments?
         is_post = not is_comment
         if is_post:
             process_dup_comments(result)
             id_ = sw.s('a.PostHeaderTitle__authorLink').g('data-post-id')
+            if id_ == '':
+                print("NO ID FOR")
+                print(post)
             text_el = sw.s('.wall_post_text')
             show_more = text_el.s('.PostTextMore')
             show_more.decompose() # clear 'Показать еще'
@@ -106,9 +111,38 @@ def process_posts(posts):
             text = sw.s('.wall_reply_text').get_text('\n') # no support for everything except text for now; remove \n after mention? TODO
             when = sw.s('.rel_date').get_text()
             #print("before", result[-1]["comments"])
+            if result == []:
+                print("warning: no posts to append comments to")
+                continue
             result[-1]['first_comments'].append({'from' : from_, 'from_id' : from_id, 'text' : text, 'when' : when})
             #print("after", result[-1]["comments"])
-path = '/media/paul/B0701CFA701CC94C/Users/Paul/Downloads/'
-mor = 'psyamour_part*.json'
-# process_files_in_dir_by_glob(path, mor)
-process_file('/home/paul/Загрузки/netstalcing.json')
+
+def toDb(data, path):
+    import sqlite3
+    db = sqlite3.connect(path)
+    c = db.cursor()
+    c.execute("CREATE TABLE IF NOT EXISTS posts (internalId INTEGER PRIMARY KEY AUTOINCREMENT, srcId INT, postId INT, when_ TEXT, from_ TEXT, text TEXT, votingData TEXT, lices INT, comments INT, reposts INT)")
+    c.execute("CREATE TABLE IF NOT EXISTS imgs (internalId INTEGER REFERENCES posts(internalId), linc TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS videos (internalId INTEGER REFERENCES posts(internalId), linc TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS audios (internalId INTEGER REFERENCES posts(internalId), data TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS lincs (internalId INTEGER REFERENCES posts(internalId), linc TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS comments (internalId INTEGER REFERENCES posts(internalId), from_ TEXT, from_id INT, text TEXT, when_ TEXT)")
+    firstId = int(c.execute("SELECT MAX(internalId) FROM posts").fetchone()[0] or '0') + 1
+    def f(p):
+        id_ = p['id'].split('_')
+        srcId = int(id_[0])
+        postId = int(id_[1])
+        s = p['stats']
+        ret= [srcId, postId, p['when'], p['from'], p['text'], json.dumps(p['voting_data'],ensure_ascii=False), s['lices'], s['comments'], s['reposts']]
+        return ret
+    c.executemany("INSERT INTO posts (srcId, postId, when_, from_, text, votingData, lices, comments, reposts) VALUES (?,?,?,?,?,?,?,?,?)", [f(p) for p in data]) # order guaranteed?
+    for i, p in enumerate(data):
+        c.executemany("INSERT INTO imgs VALUES (?, ?)", [[firstId + i, img] for img in p['imgs']])
+        c.executemany("INSERT INTO videos VALUES (?, ?)", [[firstId + i, img] for img in p['videos']])
+        c.executemany("INSERT INTO audios VALUES (?, ?)", [[firstId + i, json.dumps(img,ensure_ascii=False)] for img in p['audios']])
+        c.executemany("INSERT INTO lincs VALUES (?, ?)", [[firstId + i, img] for img in [*p['lincs']['away'], *p['lincs']['other']]])
+        c.executemany("INSERT INTO comments VALUES (?, ?, ?, ?, ?)", [[firstId + i, c['from'], c['from_id'], c['text'], c['when']] for c in p['first_comments']])
+    db.commit()
+        
+process_files_in_dir_by_glob(path, 'netstalcing*.json')
+toDb(result, '/home/paul/Загрузки/netstalcing.db')
