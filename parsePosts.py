@@ -71,6 +71,7 @@ def process_posts(posts):
             if id_ == '':
                 print("NO ID FOR")
                 print(post)
+                id_ = '-1_-1'
             text_el = sw.s('.wall_post_text')
             show_more = text_el.s('.PostTextMore')
             show_more.decompose() # clear 'Показать еще'
@@ -148,5 +149,5 @@ def toDb(data, path):
         c.executemany("INSERT INTO comments VALUES (?, ?, ?, ?, ?)", [[firstId + i, c['from'], c['from_id'], c['text'], c['when']] for c in p['first_comments']])
     db.commit()
         
-process_files_in_dir_by_glob('/home/paul/Загрузки/', 'netstalcing*.json')
-toDb(result, '/home/paul/Загрузки/netstalcing2.db')
+process_files_in_dir_by_glob('/media/paul/B0701CFA701CC94C/Users/Paul/Downloads/', 'psyamour_part*.json')
+toDb(result, '/home/paul/Загрузки/psyamour.db')
